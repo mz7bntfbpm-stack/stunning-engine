@@ -5,3 +5,4 @@ beautifulsoup4
 fpdf2
 geopy
 pydeck
+urllib3
