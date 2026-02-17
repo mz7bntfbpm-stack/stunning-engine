@@ -10,3 +10,6 @@ targets_ready.csv
 
 # Streamlit
 .streamlit/secrets.toml
+
+*.csv
+leads_koeln.csv
