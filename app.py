@@ -10,39 +10,59 @@ from geopy.geocoders import Nominatim
 import io
 
 # --- 1. CORE LOGIC (Audit) ---
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 def grade_website(url):
     if not url or pd.isna(url):
         return None, None, None
-    try:
-        # Säuberung der URL
-        clean_url = url.strip()
-        if not clean_url.startswith('http'):
-            clean_url = 'https://' + clean_url
+    
+    clean_url = url.strip()
+    if not clean_url.startswith('http'):
+        clean_url = 'https://' + clean_url
         
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    # Wir rotieren die User-Agents, um menschlicher zu wirken
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,webp,*/*;q=0.8',
+        'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+    }
+
+    try:
         start_time = time.time()
-        # Timeout erhöht auf 10 Sek für langsamere Handwerker-Seiten
-        response = requests.get(clean_url, timeout=10, headers=headers, verify=True)
+        # verify=False ignoriert SSL-Fehler (wichtig für KMUs!)
+        response = requests.get(clean_url, timeout=12, headers=headers, verify=False)
         ttfb = time.time() - start_time
         
+        # Falls wir blockiert werden (403), geben wir einen speziellen Score
+        if response.status_code == 403:
+            return 10, ["Sicherheits-Blockade: Ihre Seite sperrt potenzielle Kunden & Google aus."], round(ttfb, 2)
+
         soup = BeautifulSoup(response.text, 'html.parser')
         score = 100
         issues = []
         
-        if ttfb > 1.5:
+        # Check: Ist die Seite leer?
+        if len(response.text) < 500:
+            return 5, ["Inhalts-Fehler: Die Seite liefert fast keinen Text an Browser."], round(ttfb, 2)
+
+        if ttfb > 1.8:
             score -= 30
-            issues.append(f"Performance: {round(ttfb, 2)}s Ladezeit.")
+            issues.append(f"Speed: {round(ttfb, 2)}s Ladezeit (Kunden springen ab).")
+        
         if not soup.find('h1'):
             score -= 20
-            issues.append("SEO: Keine H1-Überschrift.")
+            issues.append("SEO-GAU: Kein H1-Titel (Google findet Sie nicht).")
+            
         if not soup.find('meta', attrs={'name': 'description'}):
             score -= 15
-            issues.append("Marketing: Meta-Description fehlt.")
+            issues.append("Marketing: Keine Meta-Beschreibung für Google-Suche.")
             
-        return max(score, 0), issues, round(ttfb, 2)
+        return max(score, 5), issues, round(ttfb, 2)
+        
     except Exception as e:
-        # Rückgabe von 1 statt 0, um "technisch vorhanden, aber Fehler" zu markieren
-        return 1, [f"Seite nicht erreichbar: {str(e)[:50]}..."], None
+        # Ein Score von 5 signalisiert: "Technisch defekt oder komplett gesperrt"
+        return 5, [f"Technik-Check fehlgeschlagen: Seite reagiert nicht sauber."], None
 
 # --- 2. PDF GENERATOR ---
 def create_pdf_report(url, score, issues):
