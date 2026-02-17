@@ -4,9 +4,10 @@ import requests
 from bs4 import BeautifulSoup
 import time
 from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 import io
 
-# --- 1. CORE LOGIC (Der Eddy-Grader) ---
+# --- 1. CORE LOGIC ---
 def grade_website(url):
     if not url or pd.isna(url):
         return None, None, None
@@ -24,59 +25,62 @@ def grade_website(url):
         
         if ttfb > 1.2:
             score -= 30
-            issues.append(f"Performance-Leck: {round(ttfb, 2)}s Ladezeit. User springen ab.")
+            issues.append(f"Performance: {round(ttfb, 2)}s Ladezeit.")
         if not soup.find('h1'):
             score -= 20
-            issues.append("SEO-Fehler: Keine H1-Überschrift gefunden.")
+            issues.append("SEO: Keine H1-Überschrift gefunden.")
         if not soup.find('meta', attrs={'name': 'description'}):
             score -= 15
-            issues.append("Conversion-Killer: Meta-Description fehlt.")
-        imgs = soup.find_all('img')
-        missing_alt = [img for img in imgs if not img.get('alt')]
-        if len(missing_alt) > 2:
-            score -= 10
-            issues.append(f"Struktur-Fehler: {len(missing_alt)} Bilder ohne Alt-Tags.")
+            issues.append("Marketing: Meta-Description fehlt.")
             
         return score, issues, round(ttfb, 2)
     except Exception as e:
         return None, [f"Fehler: {str(e)}"], None
 
-# --- 2. PDF GENERATOR ---
+# --- 2. PDF GENERATOR (Korrekt für fpdf2 2.8.5) ---
 def create_pdf_report(url, score, issues):
-    pdf = FPDF()
+    # 'P' = Portrait, 'mm' = Millimeter, 'A4' = Format
+    pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     
-    # Header
-    pdf.set_font("Arial", 'B', 20)
+    # Nutze 'helvetica' (Standard-Font ohne Deprecation)
+    pdf.set_font("helvetica", 'B', 20)
     pdf.set_text_color(0, 255, 65) # Eddy-Grün
-    pdf.cell(200, 20, txt="AGENT-BOT.DE AUDIT REPORT", ln=True, align='C')
     
-    # Website Info
-    pdf.set_font("Arial", 'B', 14)
+    # epw = Effective Page Width (berücksichtigt Ränder automatisch)
+    pdf.cell(w=pdf.epw, h=20, text="AGENT-BOT.DE AUDIT REPORT", 
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+    
+    pdf.set_font("helvetica", 'B', 14)
     pdf.set_text_color(0, 0, 0)
-    pdf.cell(200, 10, txt=f"Analyse für: {url}", ln=True)
+    pdf.cell(w=pdf.epw, h=10, text=f"Analyse fuer: {url}", 
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(5)
     
-    # Score
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt=f"Gesamt-Score: {score}/100", ln=True)
+    pdf.set_font("helvetica", 'B', 16)
+    pdf.cell(w=pdf.epw, h=10, text=f"Gesamt-Score: {score}/100", 
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(10)
     
-    # Issues
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(200, 10, txt="Gefundene Schwachstellen:", ln=True)
-    pdf.set_font("Arial", size=11)
+    pdf.set_font("helvetica", 'B', 12)
+    pdf.cell(w=pdf.epw, h=10, text="Gefundene Schwachstellen:", 
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    
+    pdf.set_font("helvetica", size=11)
     for issue in issues:
-        pdf.multi_cell(0, 10, txt=f"- {issue}")
+        # Ersetze Umlaute für Standard-PDF-Fonts oder nutze multi_cell
+        safe_issue = issue.replace('ü','ue').replace('ä','ae').replace('ö','oe').replace('ß','ss')
+        pdf.multi_cell(w=pdf.epw, h=8, text=f"- {safe_issue}", 
+                       new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     
     pdf.ln(15)
-    pdf.set_font("Arial", 'I', 10)
-    pdf.multi_cell(0, 10, txt="Hinweis: Diese Fehler kosten Sie täglich potenzielle Kundenanfragen. Kontaktieren Sie uns für ein technisches Fix-Setup.")
+    pdf.set_font("helvetica", 'I', 10)
+    msg = "Hinweis: Diese Fehler kosten Sie taeglich Leads. Kontaktieren Sie uns fuer ein Fix-Setup."
+    pdf.multi_cell(w=pdf.epw, h=8, text=msg)
     
-    # PDF als Byte-Stream zurückgeben
     return pdf.output()
 
-# --- 3. UI CONFIG & STYLING ---
+# --- 3. UI ---
 st.set_page_config(page_title="Agent-Bot.de", page_icon="⚡", layout="wide")
 
 st.markdown("""
@@ -87,9 +91,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. MAIN UI ---
 st.title("🤖 Agent-Bot Lead-Generator")
-st.write("Verschaffe dir den unfairen Vorteil. Analysiere deine Konkurrenz oder Kunden.")
 
 tab1, tab2 = st.tabs(["🎯 Einzel-Audit", "🔥 Bulk-Check"])
 
@@ -97,42 +99,42 @@ with tab1:
     url_input = st.text_input("Website URL eingeben:", placeholder="z.B. https://koeln-handwerk.de")
     if st.button("Audit starten"):
         if url_input:
-            with st.spinner('Scanne Infrastruktur...'):
+            with st.spinner('Scanne...'):
                 score, issues, ttfb = grade_website(url_input)
                 if score is not None:
                     st.divider()
-                    col1, col2 = st.columns(2)
-                    col1.metric("Score", f"{score}/100")
-                    col2.metric("Speed", f"{ttfb}s")
+                    st.metric("Score", f"{score}/100")
                     
                     st.write("### Analyse:")
                     for issue in issues:
                         st.write(issue)
                     
-                    # PDF Download Button
-                    pdf_bytes = create_pdf_report(url_input, score, issues)
-                    st.download_button(
-                        label="📥 Audit-Report als PDF speichern",
-                        data=pdf_bytes,
-                        file_name=f"audit_{url_input.replace('https://','').replace('http://','')}.pdf",
-                        mime="application/pdf"
-                    )
-                else:
-                    st.error("Konnte Seite nicht erreichen.")
+                    # PDF Erstellung
+                    try:
+                        pdf_output = create_pdf_report(url_input, score, issues)
+                        st.download_button(
+                            label="📥 Audit-Report als PDF speichern",
+                            data=bytes(pdf_output),
+                            file_name="audit_report.pdf",
+                            mime="application/pdf"
+                        )
+                    except Exception as e:
+                        st.error(f"PDF-Fehler: {str(e)}")
 
 with tab2:
     st.write("Lade deine CSV hoch (Spalte 'Website' erforderlich).")
     uploaded_file = st.file_uploader("Leads hochladen", type="csv")
-    if uploaded_file and st.button("Liste grillen"):
+    if uploaded_file:
         df = pd.read_csv(uploaded_file)
-        results = []
-        bar = st.progress(0)
-        for i, row in df.iterrows():
-            s, _, _ = grade_website(row['Website'])
-            results.append(s if s is not None else 0)
-            bar.progress((i + 1) / len(df))
-        df['Score'] = results
-        st.dataframe(df.sort_values(by='Score'))
-
-st.divider()
-st.caption("Agent-Bot.de | Chief of Staff Dashboard")
+        if 'Website' in df.columns:
+            if st.button("Liste grillen"):
+                results = []
+                bar = st.progress(0)
+                for i, row in df.iterrows():
+                    s, _, _ = grade_website(row['Website'])
+                    results.append(s if s is not None else 0)
+                    bar.progress((i + 1) / len(df))
+                df['Score'] = results
+                st.dataframe(df.sort_values(by='Score'))
+        else:
+            st.error("Spalte 'Website' fehlt in der CSV!")
