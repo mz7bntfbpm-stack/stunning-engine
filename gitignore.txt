@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Data
+*.csv
+targets_ready.csv
+
+# Streamlit
+.streamlit/secrets.toml
